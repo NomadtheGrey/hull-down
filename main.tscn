@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://vector_renderer.gd" id="2_vec"]
+[ext_resource type="Script" path="res://radar.gd" id="3_rad"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
@@ -26,6 +27,24 @@ theme_override_colors/font_color = Color(0.35, 1, 0.45, 1)
 theme_override_font_sizes/font_size = 30
 text = "HULL DOWN"
 
+[node name="Score" type="Label" parent="HUD"]
+offset_left = 32.0
+offset_top = 62.0
+offset_right = 500.0
+offset_bottom = 90.0
+theme_override_colors/font_color = Color(0.35, 1, 0.45, 1)
+theme_override_font_sizes/font_size = 19
+text = "SCORE 0000"
+
+[node name="Hull" type="Label" parent="HUD"]
+offset_left = 32.0
+offset_top = 90.0
+offset_right = 500.0
+offset_bottom = 118.0
+theme_override_colors/font_color = Color(0.35, 1, 0.45, 1)
+theme_override_font_sizes/font_size = 19
+text = "HULL 3/3   TANKS 3"
+
 [node name="Status" type="Label" parent="HUD"]
 anchor_top = 1.0
 anchor_bottom = 1.0
@@ -46,6 +65,28 @@ text = "+"
 horizontal_alignment = 1
 vertical_alignment = 1
 
+[node name="Radar" type="Control" parent="HUD"]
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -80.0
+offset_top = 10.0
+offset_right = 80.0
+offset_bottom = 170.0
+mouse_filter = 2
+script = ExtResource("3_rad")
+
+[node name="GameOver" type="Label" parent="HUD"]
+visible = false
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_colors/font_color = Color(1, 0.4, 0.3, 1)
+theme_override_font_sizes/font_size = 38
+text = "GAME OVER
+
+Press ENTER to restart"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="Options" type="HBoxContainer" parent="HUD"]
 anchor_left = 1.0
 anchor_right = 1.0
@@ -56,10 +97,13 @@ offset_bottom = 56.0
 theme_override_constants/separation = 8
 
 [node name="VectorBtn" type="Button" parent="HUD/Options"]
+focus_mode = 0
 text = "VECTOR"
 
 [node name="ModelBtn" type="Button" parent="HUD/Options"]
+focus_mode = 0
 text = "3D MODELS (SOON)"
 
 [node name="FullBtn" type="Button" parent="HUD/Options"]
+focus_mode = 0
 text = "FULLSCREEN"

@@ -26,12 +26,26 @@
 ## Built
 
 - Scaffold (Merge #1, on main): bootable greybox plain.
-- Vector build 1 (WIP): drivable first-person tank (main.gd owns all
-  game state; collision is circle-vs-obstacle math, no physics
-  dependency), cannon with tracer + ray-hit against obstacle boxes,
-  vector_renderer.gd draws grid / obstacles / horizon mountains as
-  unshaded green line meshes. Headless-verified: clean 180-frame boot,
-  collision push-out and ray-hit tests pass.
+- Vector build 1 (Merge #2, on main): drivable first-person tank
+  (main.gd owns all game state; collision is circle-vs-obstacle math,
+  no physics dependency), cannon with tracer + ray-hit against
+  obstacle boxes, vector_renderer.gd draws grid / obstacles / horizon
+  mountains as unshaded green line meshes. Headless-verified: clean
+  180-frame boot, collision push-out and ray-hit tests pass.
+- Vector build 2 (WIP): the "Space doesn't fire" fix — build 1's shot
+  WAS firing, but the tracer ran from the eye down its own axis, so
+  it projected to an invisible dot for 90 ms. Shots now draw from a
+  low-right gun muzzle to the impact point, with an impact burst and
+  a reticle pulse; HUD buttons are focus-none so Space can never be
+  swallowed as a UI press; left-click also fires. Plus: 3 bot tanks
+  (spawn 55-85 m out, chase with crude obstacle steering, fire with a
+  fair random spread — no oracle aim), one-shot kills, hull 3 hits /
+  3 tanks / game over + Enter restart, score, and a heading-up radar
+  scope (radar.gd — red enemy blips, faint obstacles, sweep arm).
+  Enemy tracers burn amber so danger reads. All numbers draft.
+  Headless-verified: clean boot, Space-through-the-input-pipeline
+  fires, kill/score, enemy hit, AI closing, radar orientation tests
+  all pass.
 
 ## Draft / open
 
