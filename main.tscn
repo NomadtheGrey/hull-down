@@ -1,0 +1,68 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+
+[sub_resource type="PlaneMesh" id="GroundMesh"]
+size = Vector2(240, 240)
+
+[sub_resource type="StandardMaterial3D" id="GroundMat"]
+albedo_color = Color(0.07, 0.09, 0.07, 1)
+
+[sub_resource type="BoxMesh" id="BlockMesh"]
+size = Vector3(2, 2, 2)
+
+[sub_resource type="StandardMaterial3D" id="BlockMat"]
+albedo_color = Color(0.16, 0.35, 0.16, 1)
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, 11)
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("GroundMesh")
+surface_material_override/0 = SubResource("GroundMat")
+
+[node name="Block1" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 1, -6)
+mesh = SubResource("BlockMesh")
+surface_material_override/0 = SubResource("BlockMat")
+
+[node name="Block2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.5, 1, -11)
+mesh = SubResource("BlockMesh")
+surface_material_override/0 = SubResource("BlockMat")
+
+[node name="Block3" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1, -19)
+mesh = SubResource("BlockMesh")
+surface_material_override/0 = SubResource("BlockMat")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Title" type="Label" parent="HUD"]
+offset_left = 32.0
+offset_top = 24.0
+offset_right = 700.0
+offset_bottom = 74.0
+theme_override_font_sizes/font_size = 36
+text = "HULL DOWN"
+
+[node name="Subtitle" type="Label" parent="HUD"]
+offset_left = 32.0
+offset_top = 76.0
+offset_right = 700.0
+offset_bottom = 106.0
+theme_override_font_sizes/font_size = 18
+text = "BattleZone, slightly more modern. Scaffold build — the plain is empty for now."
+
+[node name="Status" type="Label" parent="HUD"]
+offset_left = 32.0
+offset_top = 592.0
+offset_right = 700.0
+offset_bottom = 622.0
+theme_override_font_sizes/font_size = 18
+text = "Scaffold running fine for 0 seconds."
