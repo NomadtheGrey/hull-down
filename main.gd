@@ -27,6 +27,7 @@ const SPAWN_MAX := 100.0
 const HULL_MAX := 3
 const CHUNK := 60.0
 const CHUNK_RADIUS := 2 # 5x5 chunks of battlefield around the player
+const MOUSE_SENS := 0.0032
 
 var heading := 0.0
 var speed_now := 0.0
@@ -48,6 +49,9 @@ var wave_total := 0
 var wave_state := "intro" # intro -> combat -> cleared -> intro ...
 var wave_timer := 1.2
 var rng := RandomNumberGenerator.new()
+var touch_turn := 0 # -1..1, from the on-screen pads
+var touch_drive := 0 # -1..1, from the on-screen pads
+var mouse_captured := false
 
 var obstacles: Array[Dictionary] = []
 var enemies: Array[Dictionary] = []
@@ -69,6 +73,10 @@ var _chunk_at := Vector2i(9999, 9999)
 @onready var vector_btn: Button = $HUD/Options/VectorBtn
 @onready var model_btn: Button = $HUD/Options/ModelBtn
 @onready var full_btn: Button = $HUD/Options/FullBtn
+@onready var solo_btn: Button = $HUD/PlayModes/SoloBtn
+@onready var match_btn: Button = $HUD/PlayModes/MatchBtn
+@onready var hint: Label = $HUD/Hint
+@onready var touch_controls: Control = $HUD/TouchControls
 
 
 func _ready() -> void:
@@ -79,19 +87,69 @@ func _ready() -> void:
 	vector_btn.disabled = true
 	model_btn.disabled = true # Adam's pin: 3D option disabled until populated
 	full_btn.pressed.connect(toggle_fullscreen)
+	solo_btn.disabled = true # SOLO is the live mode
+	match_btn.disabled = true # MATCH stays disabled until multiplayer is wired
+	_bind_touch()
+	_apply_touch_visibility(false)
 	reticle.pivot_offset = reticle.size * 0.5
 	_rebuild_chunks(true)
 	_update_score_hud()
 
 
+## Touch pads feed the same turn/drive values the keyboard does, so
+## touch and keyboard/mouse buildouts stay simultaneous from here on
+## (Adam's pin — never assume the player is on a PC).
+func _bind_touch() -> void:
+	var fwd: Button = $HUD/TouchControls/FwdBtn
+	var back: Button = $HUD/TouchControls/BackBtn
+	var left: Button = $HUD/TouchControls/TurnLeftBtn
+	var right: Button = $HUD/TouchControls/TurnRightBtn
+	var fire: Button = $HUD/TouchControls/FireBtn
+	fwd.button_down.connect(func() -> void: touch_drive = 1)
+	fwd.button_up.connect(func() -> void: if touch_drive == 1: touch_drive = 0)
+	back.button_down.connect(func() -> void: touch_drive = -1)
+	back.button_up.connect(func() -> void: if touch_drive == -1: touch_drive = 0)
+	left.button_down.connect(func() -> void: touch_turn = 1)
+	left.button_up.connect(func() -> void: if touch_turn == 1: touch_turn = 0)
+	right.button_down.connect(func() -> void: touch_turn = -1)
+	right.button_up.connect(func() -> void: if touch_turn == -1: touch_turn = 0)
+	fire.button_down.connect(_fire)
+
+
+func _apply_touch_visibility(force: bool) -> void:
+	touch_controls.visible = force or DisplayServer.is_touchscreen_available()
+	hint.visible = not touch_controls.visible
+
+
+func _capture_mouse() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	mouse_captured = true
+	hint.visible = false
+
+
+func _release_mouse() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	mouse_captured = false
+	hint.visible = not touch_controls.visible
+
+
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
+	if event is InputEventMouseMotion and mouse_captured:
+		heading -= event.relative.x * MOUSE_SENS
+	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_F11:
 			toggle_fullscreen()
+		elif event.keycode == KEY_ESCAPE and mouse_captured:
+			_release_mouse()
 		elif event.keycode == KEY_ENTER and game_over:
 			_restart()
 	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		_fire()
+		# PC mouse play: the first click on the view captures the mouse
+		# (move = steer); clicks while captured fire the cannon.
+		if mouse_captured:
+			_fire()
+		else:
+			_capture_mouse()
 
 
 func toggle_fullscreen() -> void:
@@ -135,19 +193,25 @@ func _process(delta: float) -> void:
 		renderer.update_enemies()
 		return
 
-	# --- player turning & driving ---
-	var turn := 0.0
+	# The browser/OS can take pointer capture back (Esc) without asking.
+	if mouse_captured and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and DisplayServer.get_name() != "headless":
+		mouse_captured = false
+		hint.visible = not touch_controls.visible
+
+	# --- player turning & driving (keyboard + touch pads together) ---
+	var turn := float(touch_turn)
 	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
 		turn += 1.0
 	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
 		turn -= 1.0
-	heading += turn * TURN_SPEED * delta
+	heading += clampf(turn, -1.0, 1.0) * TURN_SPEED * delta
 
-	var drive := 0.0
+	var drive := float(touch_drive)
 	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
 		drive += 1.0
 	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
 		drive -= 1.0
+	drive = clampf(drive, -1.0, 1.0)
 	speed_now = drive * MOVE_SPEED
 	var forward := Vector3(-sin(heading), 0, -cos(heading))
 	tank.position = _resolve_collisions(tank.position + forward * speed_now * delta, TANK_RADIUS)

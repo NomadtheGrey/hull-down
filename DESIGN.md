@@ -22,6 +22,13 @@
 - **Mode option lives in the game** (2026-11-18): VECTOR / 3D MODELS
   buttons in the HUD; the 3D button stays disabled until that mode is
   populated.
+- **Multiplayer later** (2026-11-18): wired eventually using the same
+  mechanics as BioForge and Mass Rattle (host-run rooms, room codes,
+  relay in the BioForge-relay / Cloudflare Worker family). Until
+  then: SOLO / MATCH pills up top, MATCH disabled.
+- **Never assume a PC** (2026-11-18): touch controls on phones and
+  tablets ship simultaneously with keyboard/mouse buildouts. On PC,
+  the mouse rotates the camera (pointer capture steering).
 
 ## Built
 
@@ -67,7 +74,15 @@
   the HUD. Headless-verified: 14/14 tests (chunk determinism, field
   at +600 m, spawn ring, shell flight time 0.5 s to a kill, pyramid
   shell/tank shapes, hit/death/respawn, wave flow) and a clean
-  300-frame boot.
+  300-frame boot. MERGED as Merge #4 (PR #4, d193489) 2026-11-18.
+- Build 4 (WIP): SOLO / MATCH pills top-right (SOLO the live mode,
+  MATCH disabled until multiplayer); the VECTOR/3D/FULLSCREEN row
+  moved to the bottom-left to make room. Touch pads (LEFT / RIGHT /
+  FWD / BACK / FIRE, hold-to-drive) appear automatically on
+  touchscreen devices and feed the same turn/drive path as the
+  keyboard. Mouse steering on PC via pointer capture. Decorative
+  HUD labels no longer swallow view clicks. Headless-verified:
+  12/12 tests, clean boot.
 
 ## Draft / open
 
@@ -75,7 +90,9 @@
   Candidates, none pinned: twin-stick-style tank steering vs the
   original's twin-lever feel; guided shells; a horizon with mountains
   and the volcano; score/lives structure kept arcade-plain.
-- Controls on tablet (touch) vs laptop (keys) — undesigned.
+- Controls on tablet vs laptop — settled in build 4 (touch pads +
+  mouse steering, simultaneous with keyboard); the twin-lever feel
+  for the pads is still undesigned.
 - Whether the vector mode is drawn with real 3D wireframe meshes or a
   shader/line pass — a build decision for the vector landing, informed
   by tablet performance.
