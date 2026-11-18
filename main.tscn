@@ -1,8 +1,10 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://vector_renderer.gd" id="2_vec"]
 [ext_resource type="Script" path="res://radar.gd" id="3_rad"]
+[ext_resource type="Script" path="res://reticle.gd" id="4_ret"]
+[ext_resource type="Script" path="res://tank_icons.gd" id="5_liv"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
@@ -47,22 +49,51 @@ text = "SCORE 0000"
 [node name="Hull" type="Label" parent="HUD"]
 mouse_filter = 2
 offset_left = 32.0
-offset_top = 90.0
+offset_top = 116.0
 offset_right = 500.0
-offset_bottom = 118.0
+offset_bottom = 142.0
 theme_override_colors/font_color = Color(0.35, 1, 0.45, 1)
 theme_override_font_sizes/font_size = 19
-text = "HULL 3/3   TANKS 3"
+text = "HULL 3/3"
 
 [node name="Wave" type="Label" parent="HUD"]
 mouse_filter = 2
 offset_left = 32.0
-offset_top = 118.0
+offset_top = 144.0
 offset_right = 500.0
-offset_bottom = 146.0
+offset_bottom = 170.0
 theme_override_colors/font_color = Color(0.35, 1, 0.45, 1)
 theme_override_font_sizes/font_size = 19
 text = "WAVE 1   HOSTILES 0"
+
+[node name="HiScore" type="Label" parent="HUD"]
+mouse_filter = 2
+offset_left = 32.0
+offset_top = 90.0
+offset_right = 500.0
+offset_bottom = 114.0
+theme_override_colors/font_color = Color(0.35, 1, 0.45, 1)
+theme_override_font_sizes/font_size = 17
+text = "HI 000000"
+
+[node name="Warn" type="Label" parent="HUD"]
+visible = false
+mouse_filter = 2
+offset_left = 32.0
+offset_top = 176.0
+offset_right = 500.0
+offset_bottom = 226.0
+theme_override_colors/font_color = Color(1, 0.25, 0.2, 1)
+theme_override_font_sizes/font_size = 19
+text = "ENEMY IN RANGE"
+
+[node name="LivesIcons" type="Control" parent="HUD"]
+mouse_filter = 2
+offset_left = 176.0
+offset_top = 114.0
+offset_right = 320.0
+offset_bottom = 142.0
+script = ExtResource("5_liv")
 
 [node name="Status" type="Label" parent="HUD"]
 mouse_filter = 2
@@ -76,15 +107,17 @@ theme_override_colors/font_color = Color(0.35, 1, 0.45, 1)
 theme_override_font_sizes/font_size = 17
 text = "HDG 000   SPD +0   VECTOR MODE"
 
-[node name="Reticle" type="Label" parent="HUD"]
+[node name="Reticle" type="Control" parent="HUD"]
 mouse_filter = 2
-anchor_right = 1.0
-anchor_bottom = 1.0
-theme_override_colors/font_color = Color(0.35, 1, 0.45, 1)
-theme_override_font_sizes/font_size = 30
-text = "+"
-horizontal_alignment = 1
-vertical_alignment = 1
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -52.0
+offset_top = -52.0
+offset_right = 52.0
+offset_bottom = 52.0
+script = ExtResource("4_ret")
 
 [node name="Radar" type="Control" parent="HUD"]
 mouse_filter = 2

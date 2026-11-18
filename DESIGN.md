@@ -75,6 +75,19 @@
   at +600 m, spawn ring, shell flight time 0.5 s to a kill, pyramid
   shell/tank shapes, hit/death/respawn, wave flow) and a clean
   300-frame boot. MERGED as Merge #4 (PR #4, d193489) 2026-11-18.
+- Build 5 (WIP) — the presentation batch, from the 1980 longplay
+  Adam linked (reference kept at ~/workspace/hull-down-ref/): the red
+  warning panel (ENEMY IN RANGE + ENEMY TO LEFT / RIGHT / REAR, from
+  the nearest hostile); the reticle redrawn as the original's open
+  bracket cross (reticle.gd); lives as little tank silhouettes
+  (tank_icons.gd) with a persistent HI score (user://hulldown.cfg);
+  horizon purism — the ground grid is GONE (the original has only the
+  horizon line), the mountain ridge flattened to a low hug of the
+  horizon, and a crescent moon (two overlapping circles, the vector
+  way) hangs in the sky; enemy tanks redrawn squat and wide.
+  Headless-verified: 9/9 tests, clean boot. Scoring stays 100/250 in
+  this build — the original's 1000/3000/5000 table rides with the
+  Super Tank + saucer build, where it belongs.
 - Build 4 (WIP): SOLO / MATCH pills top-right (SOLO the live mode,
   MATCH disabled until multiplayer); the VECTOR/3D/FULLSCREEN row
   moved to the bottom-left to make room. Touch pads (LEFT / RIGHT /

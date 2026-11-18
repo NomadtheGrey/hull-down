@@ -18,7 +18,6 @@ var _dyn_green: ImmediateMesh
 var _dyn_amber: ImmediateMesh
 var _obst_inst: MeshInstance3D
 var _mountain_inst: MeshInstance3D
-var _grid_inst: MeshInstance3D
 
 
 func _ready() -> void:
@@ -64,23 +63,6 @@ func build_world() -> void:
 	_mountain_inst.material_override = _bright
 	add_child(_mountain_inst)
 
-	var grid := ImmediateMesh.new()
-	grid.surface_begin(Mesh.PRIMITIVE_LINES)
-	var ext := 120
-	var step := 20
-	var i := -ext
-	while i <= ext:
-		grid.surface_add_vertex(Vector3(i, 0.02, -ext))
-		grid.surface_add_vertex(Vector3(i, 0.02, ext))
-		grid.surface_add_vertex(Vector3(-ext, 0.02, i))
-		grid.surface_add_vertex(Vector3(ext, 0.02, i))
-		i += step
-	grid.surface_end()
-	_grid_inst = MeshInstance3D.new()
-	_grid_inst.mesh = grid
-	_grid_inst.material_override = _dim
-	add_child(_grid_inst)
-
 	_obst_inst = MeshInstance3D.new()
 	_obst_inst.material_override = _bright
 	add_child(_obst_inst)
@@ -102,8 +84,6 @@ func rebuild_obstacles(obstacles: Array) -> void:
 func follow(player_pos: Vector3) -> void:
 	if _mountain_inst:
 		_mountain_inst.position = Vector3(player_pos.x, 0, player_pos.z)
-	if _grid_inst:
-		_grid_inst.position = Vector3(floor(player_pos.x / 20.0) * 20.0, 0, floor(player_pos.z / 20.0) * 20.0)
 
 
 func add_tracer(from: Vector3, to: Vector3, amber: bool) -> void:
@@ -188,12 +168,13 @@ func _process(delta: float) -> void:
 func _tank(mesh: ImmediateMesh, pos: Vector3, h: float) -> void:
 	# A low hull, a turret, and a barrel — read as a tank in 14 lines.
 	var local := [
-		# hull: bottom rectangle, top rectangle, uprights
-		Vector3(-1.1, 0.25, -1.4), Vector3(1.1, 0.25, -1.4), Vector3(1.1, 0.25, 1.4), Vector3(-1.1, 0.25, 1.4),
-		Vector3(-1.1, 0.95, -1.4), Vector3(1.1, 0.95, -1.4), Vector3(1.1, 0.95, 1.4), Vector3(-1.1, 0.95, 1.4),
+		# hull: bottom rectangle, top rectangle, uprights — squat and
+		# wide like the original's tank, not long and narrow
+		Vector3(-1.45, 0.15, -1.05), Vector3(1.45, 0.15, -1.05), Vector3(1.45, 0.15, 1.05), Vector3(-1.45, 0.15, 1.05),
+		Vector3(-1.45, 0.8, -1.05), Vector3(1.45, 0.8, -1.05), Vector3(1.45, 0.8, 1.05), Vector3(-1.45, 0.8, 1.05),
 		# turret
-		Vector3(-0.55, 0.95, -0.3), Vector3(0.55, 0.95, -0.3), Vector3(0.55, 0.95, 0.7), Vector3(-0.55, 0.95, 0.7),
-		Vector3(-0.55, 1.45, -0.3), Vector3(0.55, 1.45, -0.3), Vector3(0.55, 1.45, 0.7), Vector3(-0.55, 1.45, 0.7),
+		Vector3(-0.5, 0.8, -0.3), Vector3(0.5, 0.8, -0.3), Vector3(0.5, 0.8, 0.6), Vector3(-0.5, 0.8, 0.6),
+		Vector3(-0.5, 1.25, -0.3), Vector3(0.5, 1.25, -0.3), Vector3(0.5, 1.25, 0.6), Vector3(-0.5, 1.25, 0.6),
 	]
 	var edges := [
 		[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4],
@@ -205,8 +186,8 @@ func _tank(mesh: ImmediateMesh, pos: Vector3, h: float) -> void:
 		mesh.surface_add_vertex(_to_world(local[e[0]], pos, h))
 		mesh.surface_add_vertex(_to_world(local[e[1]], pos, h))
 	# Barrel: from the turret's front face, forward.
-	mesh.surface_add_vertex(_to_world(Vector3(0, 1.2, -0.3), pos, h))
-	mesh.surface_add_vertex(_to_world(Vector3(0, 1.2, -2.2), pos, h))
+	mesh.surface_add_vertex(_to_world(Vector3(0, 1.05, -0.3), pos, h))
+	mesh.surface_add_vertex(_to_world(Vector3(0, 1.05, -2.1), pos, h))
 
 
 func _to_world(v: Vector3, pos: Vector3, h: float) -> Vector3:
@@ -264,7 +245,7 @@ func _mountains(mesh: ImmediateMesh) -> void:
 		var a := TAU * float(k) / float(count)
 		var raw: float = sin(float(k) * 12.9898) * 43758.5453
 		var n: float = raw - floor(raw)
-		var p := Vector3(sin(a) * radius, 4.0 + n * 13.0, cos(a) * radius)
+		var p := Vector3(sin(a) * radius, 1.2 + n * 3.4, cos(a) * radius)
 		if k != 0:
 			mesh.surface_add_vertex(prev)
 			mesh.surface_add_vertex(p)
@@ -274,3 +255,16 @@ func _mountains(mesh: ImmediateMesh) -> void:
 		var a2 := TAU * float(k + 1) / float(count)
 		mesh.surface_add_vertex(Vector3(sin(a1) * radius, 0.05, cos(a1) * radius))
 		mesh.surface_add_vertex(Vector3(sin(a2) * radius, 0.05, cos(a2) * radius))
+	# Crescent moon: a circle with a second, offset circle inside it —
+	# exactly how the vector original draws it.
+	_circle(mesh, Vector3(-70, 31, -176), 6.5)
+	_circle(mesh, Vector3(-67.4, 32.0, -176), 5.2)
+
+
+func _circle(mesh: ImmediateMesh, centre: Vector3, r: float) -> void:
+	var segs := 24
+	for i in segs:
+		var a0 := TAU * float(i) / float(segs)
+		var a1 := TAU * float(i + 1) / float(segs)
+		mesh.surface_add_vertex(centre + Vector3(cos(a0) * r, sin(a0) * r, 0))
+		mesh.surface_add_vertex(centre + Vector3(cos(a1) * r, sin(a1) * r, 0))

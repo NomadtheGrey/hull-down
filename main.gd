@@ -48,6 +48,7 @@ var wave_spawned := 0
 var wave_total := 0
 var wave_state := "intro" # intro -> combat -> cleared -> intro ...
 var wave_timer := 1.2
+var high_score := 0
 var rng := RandomNumberGenerator.new()
 var touch_turn := 0 # -1..1, from the on-screen pads
 var touch_drive := 0 # -1..1, from the on-screen pads
@@ -65,7 +66,10 @@ var _chunk_at := Vector2i(9999, 9999)
 @onready var score_label: Label = $HUD/Score
 @onready var hull_label: Label = $HUD/Hull
 @onready var wave_label: Label = $HUD/Wave
-@onready var reticle: Label = $HUD/Reticle
+@onready var reticle: Control = $HUD/Reticle
+@onready var hiscore_label: Label = $HUD/HiScore
+@onready var warn_label: Label = $HUD/Warn
+@onready var lives_icons: Control = $HUD/LivesIcons
 @onready var banner: Label = $HUD/Banner
 @onready var flash: ColorRect = $HUD/Flash
 @onready var gameover_label: Label = $HUD/GameOver
@@ -91,6 +95,7 @@ func _ready() -> void:
 	match_btn.disabled = true # MATCH stays disabled until multiplayer is wired
 	_bind_touch()
 	_apply_touch_visibility(false)
+	_load_high()
 	reticle.pivot_offset = reticle.size * 0.5
 	_rebuild_chunks(true)
 	_update_score_hud()
@@ -179,6 +184,7 @@ func _process(delta: float) -> void:
 	_update_shells(delta)
 	renderer.follow(tank.position)
 	radar.set_state(tank.position, heading, enemies, obstacles)
+	_update_warn()
 
 	if game_over:
 		renderer.update_enemies()
@@ -269,6 +275,7 @@ func _update_waves(delta: float) -> void:
 				_update_score_hud()
 			elif wave_spawned >= wave_total and enemies.is_empty():
 				score += 250
+				_save_high()
 				wave_state = "cleared"
 				wave_timer = 2.6
 				_show_banner("WAVE %d CLEARED  +250" % wave, 2.4)
@@ -299,10 +306,61 @@ func _restart() -> void:
 
 
 func _update_score_hud() -> void:
-	score_label.text = "SCORE %04d" % score
-	hull_label.text = "HULL %d/%d   TANKS %d" % [maxi(hull, 0), HULL_MAX, maxi(tanks_left, 0)]
+	if score > high_score:
+		high_score = score
+	score_label.text = "SCORE %06d" % score
+	hiscore_label.text = "HI %06d" % high_score
+	hull_label.text = "HULL %d/%d" % [maxi(hull, 0), HULL_MAX]
+	lives_icons.count = maxi(tanks_left, 0)
 	var hostiles := wave_total - wave_spawned + enemies.size()
 	wave_label.text = "WAVE %d   HOSTILES %d" % [maxi(wave, 1), maxi(hostiles, 0)]
+
+
+func _load_high() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://hulldown.cfg") == OK:
+		high_score = int(cfg.get_value("scores", "high", 0))
+
+
+func _save_high() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("scores", "high", high_score)
+	cfg.save("user://hulldown.cfg")
+
+
+## The original's red warning panel: the nearest hostile, how close,
+## and where it sits relative to your nose.
+func _update_warn() -> void:
+	var nearest: Dictionary = {}
+	var best := 1e9
+	for e in enemies:
+		var d: float = (e["pos"] as Vector3).distance_to(tank.position)
+		if d < best:
+			best = d
+			nearest = e
+	if nearest.is_empty() or best > 75.0:
+		warn_label.visible = false
+		return
+	var dir: Vector3 = nearest["pos"] - tank.position
+	var bearing := atan2(-dir.x, -dir.z)
+	var diff := angle_difference(heading, bearing)
+	var where := ""
+	if diff > 0.55 and diff < 2.6:
+		where = "ENEMY TO LEFT"
+	elif diff < -0.55 and diff > -2.6:
+		where = "ENEMY TO RIGHT"
+	elif absf(diff) >= 2.6:
+		where = "ENEMY TO REAR"
+	var lines: Array[String] = []
+	if best <= ENEMY_FIRE_RANGE:
+		lines.append("ENEMY IN RANGE")
+	if where != "":
+		lines.append(where)
+	if lines.is_empty():
+		warn_label.visible = false
+		return
+	warn_label.text = "\n".join(lines)
+	warn_label.visible = true
 
 
 # ---------------------------------------------------------------- battlefield
@@ -455,7 +513,8 @@ func _player_hit() -> void:
 	shake = 1.0
 	if tanks_left <= 0:
 		game_over = true
-		gameover_label.text = "GAME OVER\nSCORE %04d\n\nPress ENTER to restart" % score
+		_save_high()
+		gameover_label.text = "GAME OVER\nSCORE %06d\n\nPress ENTER to restart" % score
 		gameover_label.visible = true
 		_update_score_hud()
 		return
