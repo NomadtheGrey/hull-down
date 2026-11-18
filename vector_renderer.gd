@@ -11,10 +11,14 @@ var _bright: StandardMaterial3D
 var _dim: StandardMaterial3D
 var _amber: StandardMaterial3D
 var _enemies_ref: Array = []
+var _shells_ref: Array = []
 var _tracers: Array[Dictionary] = [] # {from, to, ttl, max, amber}
 var _bursts: Array[Dictionary] = [] # {pos, ttl, max, size}
 var _dyn_green: ImmediateMesh
 var _dyn_amber: ImmediateMesh
+var _obst_inst: MeshInstance3D
+var _mountain_inst: MeshInstance3D
+var _grid_inst: MeshInstance3D
 
 
 func _ready() -> void:
@@ -43,20 +47,22 @@ func set_enemies(enemies: Array) -> void:
 	_enemies_ref = enemies
 
 
-func build_world(obstacles: Array) -> void:
+func set_shells(shells: Array) -> void:
+	_shells_ref = shells
+
+
+## Scenery only: the mountain ring and the ground grid are endless —
+## follow() keeps them centred on the player, so the plain never ends.
+## Obstacles arrive separately through rebuild_obstacles().
+func build_world() -> void:
 	var mesh := ImmediateMesh.new()
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-	for ob in obstacles:
-		if ob["kind"] == "box":
-			_box(mesh, ob["pos"], ob["size"])
-		else:
-			_pyramid(mesh, ob["pos"], ob["size"])
 	_mountains(mesh)
 	mesh.surface_end()
-	var inst := MeshInstance3D.new()
-	inst.mesh = mesh
-	inst.material_override = _bright
-	add_child(inst)
+	_mountain_inst = MeshInstance3D.new()
+	_mountain_inst.mesh = mesh
+	_mountain_inst.material_override = _bright
+	add_child(_mountain_inst)
 
 	var grid := ImmediateMesh.new()
 	grid.surface_begin(Mesh.PRIMITIVE_LINES)
@@ -70,10 +76,34 @@ func build_world(obstacles: Array) -> void:
 		grid.surface_add_vertex(Vector3(ext, 0.02, i))
 		i += step
 	grid.surface_end()
-	var ginst := MeshInstance3D.new()
-	ginst.mesh = grid
-	ginst.material_override = _dim
-	add_child(ginst)
+	_grid_inst = MeshInstance3D.new()
+	_grid_inst.mesh = grid
+	_grid_inst.material_override = _dim
+	add_child(_grid_inst)
+
+	_obst_inst = MeshInstance3D.new()
+	_obst_inst.material_override = _bright
+	add_child(_obst_inst)
+
+
+func rebuild_obstacles(obstacles: Array) -> void:
+	var mesh := ImmediateMesh.new()
+	if not obstacles.is_empty():
+		mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+		for ob in obstacles:
+			if ob["kind"] == "box":
+				_box(mesh, ob["pos"], ob["size"])
+			else:
+				_pyramid(mesh, ob["pos"], ob["size"])
+		mesh.surface_end()
+	_obst_inst.mesh = mesh
+
+
+func follow(player_pos: Vector3) -> void:
+	if _mountain_inst:
+		_mountain_inst.position = Vector3(player_pos.x, 0, player_pos.z)
+	if _grid_inst:
+		_grid_inst.position = Vector3(floor(player_pos.x / 20.0) * 20.0, 0, floor(player_pos.z / 20.0) * 20.0)
 
 
 func add_tracer(from: Vector3, to: Vector3, amber: bool) -> void:
@@ -93,20 +123,37 @@ func _process(delta: float) -> void:
 	_dyn_green.clear_surfaces()
 	_dyn_amber.clear_surfaces()
 
-	# Enemy tanks.
-	_dyn_green.surface_begin(Mesh.PRIMITIVE_LINES)
-	for e in _enemies_ref:
-		_tank(_dyn_green, e["pos"], float(e["heading"]))
-	# Player tracers and all bursts burn green.
-	for t in _tracers:
-		if not bool(t["amber"]):
-			_dyn_green.surface_add_vertex(t["from"])
-			_dyn_green.surface_add_vertex(t["to"])
-	for b in _bursts:
-		_burst_lines(_dyn_green, b)
-	_dyn_green.surface_end()
+	# Enemy tanks, player tracers/shells and all bursts burn green.
+	# (An ImmediateMesh surface with zero vertices is an error, so the
+	# whole surface is skipped on frames where nothing is green.)
+	var any_green := not _enemies_ref.is_empty() or not _bursts.is_empty()
+	if not any_green:
+		for t in _tracers:
+			if not bool(t["amber"]):
+				any_green = true
+	if not any_green:
+		for sh in _shells_ref:
+			if bool(sh["player"]):
+				any_green = true
+	if any_green:
+		_dyn_green.surface_begin(Mesh.PRIMITIVE_LINES)
+		for e in _enemies_ref:
+			_tank(_dyn_green, e["pos"], float(e["heading"]))
+		for t in _tracers:
+			if not bool(t["amber"]):
+				_dyn_green.surface_add_vertex(t["from"])
+				_dyn_green.surface_add_vertex(t["to"])
+		for b in _bursts:
+			_burst_lines(_dyn_green, b)
+		for sh in _shells_ref:
+			if bool(sh["player"]):
+				var p: Vector3 = sh["pos"]
+				var v: Vector3 = sh["vel"]
+				_dyn_green.surface_add_vertex(p)
+				_dyn_green.surface_add_vertex(p - v.normalized() * 1.6)
+		_dyn_green.surface_end()
 
-	# Enemy tracers burn amber so danger reads at a glance.
+	# Enemy tracers and shells burn amber so danger reads at a glance.
 	var any_amber := false
 	for t in _tracers:
 		if bool(t["amber"]):
@@ -115,6 +162,15 @@ func _process(delta: float) -> void:
 				any_amber = true
 			_dyn_amber.surface_add_vertex(t["from"])
 			_dyn_amber.surface_add_vertex(t["to"])
+	for sh in _shells_ref:
+		if not bool(sh["player"]):
+			if not any_amber:
+				_dyn_amber.surface_begin(Mesh.PRIMITIVE_LINES)
+				any_amber = true
+			var p: Vector3 = sh["pos"]
+			var v: Vector3 = sh["vel"]
+			_dyn_amber.surface_add_vertex(p)
+			_dyn_amber.surface_add_vertex(p - v.normalized() * 1.6)
 	if any_amber:
 		_dyn_amber.surface_end()
 
