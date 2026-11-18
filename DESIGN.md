@@ -46,6 +46,28 @@
   Headless-verified: clean boot, Space-through-the-input-pipeline
   fires, kill/score, enemy hit, AI closing, radar orientation tests
   all pass.
+- Vector build 3 (WIP) — Adam's five playtest points, one by one:
+  (1) Enemy spawns enforced to a 70-100 m ring (fallback included —
+  no more materialising on top of the player), and on respawn any
+  hostile within 40 m is pushed back out to the ring; 3 s spawn
+  protection. (2) Cannon fire is now a travelling shell (72 m/s
+  player, 54 m/s bots, a whisper of gravity), drawn as a bright
+  streak — hits are physical, not raycasts; the ray survives only
+  to converge the aim. (3) Pyramids collide as pyramids: shells use
+  the true sloped cross-section and tanks meet the narrowed
+  footprint at hull height, not the base's cube. (4) Getting hit
+  flashes the screen red, shakes the camera and flags the status
+  line; getting destroyed freezes the action 1.5 s under a TANK
+  DESTROYED banner, then respawns in place (no more mystery
+  "teleport to the centre") under a TANK READY banner. (5) The
+  battlefield is endless and procedural: deterministic 60 m chunks
+  generated 5x5 around the player (same chunk, same field, forever),
+  grid and mountains follow the player. Waves are real now: WAVE n
+  brings 2+n hostiles (max 4 at once), +250 on a clear, counter in
+  the HUD. Headless-verified: 14/14 tests (chunk determinism, field
+  at +600 m, spawn ring, shell flight time 0.5 s to a kill, pyramid
+  shell/tank shapes, hit/death/respawn, wave flow) and a clean
+  300-frame boot.
 
 ## Draft / open
 

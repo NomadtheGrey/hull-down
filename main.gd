@@ -1,25 +1,32 @@
 extends Node3D
 ## Hull Down — game logic (renderer-agnostic).
-## Owns all world state: the player's tank, obstacles, bot enemies,
-## movement, collision, the cannon, score and lives. It knows nothing
-## about how the world is drawn: vector_renderer.gd draws this state
-## as lines today; the future 3D-model mode reads the same state.
+## Owns all world state: the player's tank, bot enemies, cannon shells,
+## waves, score and lives, and the procedural battlefield (obstacles
+## are generated in chunks around the player, endlessly). It knows
+## nothing about how the world is drawn: vector_renderer.gd draws this
+## state as lines today; the future 3D-model mode reads the same state.
 ##
 ## Controls: W/S or Up/Down drive, A/D or Left/Right turn, Space or
 ## left mouse button fires, F11 toggles fullscreen.
 
-const WORLD_RADIUS := 115.0
 const TANK_RADIUS := 1.3
 const MOVE_SPEED := 11.0
 const TURN_SPEED := 1.6
 const FIRE_RANGE := 140.0
-const FIRE_COOLDOWN := 0.35
-const ENEMY_COUNT := 3
+const FIRE_COOLDOWN := 0.45
+const SHELL_SPEED := 72.0
+const ENEMY_SHELL_SPEED := 54.0
+const SHELL_GRAVITY := 1.4
 const ENEMY_SPEED := 5.5
 const ENEMY_TURN := 1.1
 const ENEMY_FIRE_RANGE := 58.0
 const ENEMY_RADIUS := 1.4
+const ENEMY_MAX_ALIVE := 4
+const SPAWN_MIN := 70.0
+const SPAWN_MAX := 100.0
 const HULL_MAX := 3
+const CHUNK := 60.0
+const CHUNK_RADIUS := 2 # 5x5 chunks of battlefield around the player
 
 var heading := 0.0
 var speed_now := 0.0
@@ -29,25 +36,23 @@ var score := 0
 var hull := HULL_MAX
 var tanks_left := 3
 var game_over := false
-var respawn_timer := 0.0
+var protection := 2.0 # spawn protection, seconds
+var dead_timer := 0.0
+var shake := 0.0
+var hit_warn := 0.0
+var flash_alpha := 0.0
+var banner_time := 0.0
+var wave := 0
+var wave_spawned := 0
+var wave_total := 0
+var wave_state := "intro" # intro -> combat -> cleared -> intro ...
+var wave_timer := 1.2
 var rng := RandomNumberGenerator.new()
 
-var obstacles: Array[Dictionary] = [
-	{"kind": "box", "pos": Vector3(-4.5, 0, -6), "size": Vector3(2, 2, 2)},
-	{"kind": "box", "pos": Vector3(3.5, 0, -11), "size": Vector3(2, 3, 2)},
-	{"kind": "pyramid", "pos": Vector3(0.5, 0, -19), "size": Vector3(4, 3, 4)},
-	{"kind": "box", "pos": Vector3(-11, 0, -16), "size": Vector3(3, 2, 3)},
-	{"kind": "pyramid", "pos": Vector3(10, 0, -24), "size": Vector3(5, 4, 5)},
-	{"kind": "box", "pos": Vector3(-7, 0, -31), "size": Vector3(2, 4, 2)},
-	{"kind": "box", "pos": Vector3(16, 0, -8), "size": Vector3(2, 2, 2)},
-	{"kind": "pyramid", "pos": Vector3(-18, 0, -34), "size": Vector3(6, 4, 6)},
-	{"kind": "box", "pos": Vector3(7, 0, -40), "size": Vector3(3, 3, 3)},
-	{"kind": "box", "pos": Vector3(-2, 0, 10), "size": Vector3(2, 2, 2)},
-	{"kind": "pyramid", "pos": Vector3(13, 0, 14), "size": Vector3(4, 3, 4)},
-	{"kind": "box", "pos": Vector3(-13, 0, 7), "size": Vector3(2, 2, 2)},
-]
-
+var obstacles: Array[Dictionary] = []
 var enemies: Array[Dictionary] = []
+var shells: Array[Dictionary] = [] # {pos, vel, player}
+var _chunk_at := Vector2i(9999, 9999)
 
 @onready var tank: Node3D = $Tank
 @onready var camera: Camera3D = $Tank/Camera3D
@@ -55,7 +60,10 @@ var enemies: Array[Dictionary] = []
 @onready var status: Label = $HUD/Status
 @onready var score_label: Label = $HUD/Score
 @onready var hull_label: Label = $HUD/Hull
+@onready var wave_label: Label = $HUD/Wave
 @onready var reticle: Label = $HUD/Reticle
+@onready var banner: Label = $HUD/Banner
+@onready var flash: ColorRect = $HUD/Flash
 @onready var gameover_label: Label = $HUD/GameOver
 @onready var radar: Control = $HUD/Radar
 @onready var vector_btn: Button = $HUD/Options/VectorBtn
@@ -65,14 +73,14 @@ var enemies: Array[Dictionary] = []
 
 func _ready() -> void:
 	rng.randomize()
-	renderer.build_world(obstacles)
+	renderer.build_world()
 	renderer.set_enemies(enemies)
-	vector_btn.disabled = true # the active mode: shown, not clickable
+	renderer.set_shells(shells)
+	vector_btn.disabled = true
 	model_btn.disabled = true # Adam's pin: 3D option disabled until populated
 	full_btn.pressed.connect(toggle_fullscreen)
 	reticle.pivot_offset = reticle.size * 0.5
-	for i in ENEMY_COUNT:
-		_spawn_enemy()
+	_rebuild_chunks(true)
 	_update_score_hud()
 
 
@@ -95,13 +103,36 @@ func toggle_fullscreen() -> void:
 
 func _process(delta: float) -> void:
 	fire_cooldown = maxf(fire_cooldown - delta, 0.0)
+	protection = maxf(protection - delta, 0.0)
+	hit_warn = maxf(hit_warn - delta, 0.0)
 	if reticle_flash > 0.0:
 		reticle_flash = maxf(reticle_flash - delta * 5.0, 0.0)
 		reticle.scale = Vector2.ONE * (1.0 + reticle_flash * 0.7)
+	if flash_alpha > 0.0:
+		flash_alpha = maxf(flash_alpha - delta * 1.8, 0.0)
+		flash.color = Color(1.0, 0.15, 0.1, flash_alpha * 0.45)
+	if banner_time > 0.0:
+		banner_time -= delta
+		if banner_time <= 0.0:
+			banner.visible = false
+	status.modulate = Color(1, 0.35, 0.3) if hit_warn > 0.0 else Color(1, 1, 1)
+
+	_update_waves(delta)
+	_update_shells(delta)
+	renderer.follow(tank.position)
+	radar.set_state(tank.position, heading, enemies, obstacles)
 
 	if game_over:
 		renderer.update_enemies()
-		radar.set_state(tank.position, heading, enemies, obstacles)
+		return
+
+	if dead_timer > 0.0:
+		# Wrecked: no driving while the explosion clears.
+		dead_timer -= delta
+		_apply_shake(delta)
+		if dead_timer <= 0.0:
+			_respawn()
+		renderer.update_enemies()
 		return
 
 	# --- player turning & driving ---
@@ -119,43 +150,155 @@ func _process(delta: float) -> void:
 		drive -= 1.0
 	speed_now = drive * MOVE_SPEED
 	var forward := Vector3(-sin(heading), 0, -cos(heading))
-	var pos := tank.position + forward * speed_now * delta
-	if Vector2(pos.x, pos.z).length() > WORLD_RADIUS:
-		var clamped := Vector2(pos.x, pos.z).limit_length(WORLD_RADIUS)
-		pos.x = clamped.x
-		pos.z = clamped.y
-	tank.position = _resolve_collisions(pos, TANK_RADIUS)
+	tank.position = _resolve_collisions(tank.position + forward * speed_now * delta, TANK_RADIUS)
 	tank.rotation.y = heading
+	_apply_shake(delta)
 
 	if Input.is_physical_key_pressed(KEY_SPACE):
 		_fire()
 
-	# --- enemies ---
-	if respawn_timer > 0.0:
-		respawn_timer -= delta
-		if respawn_timer <= 0.0 and enemies.size() < ENEMY_COUNT:
-			_spawn_enemy()
 	_update_enemies(delta)
 	renderer.update_enemies()
-	radar.set_state(tank.position, heading, enemies, obstacles)
+	_rebuild_chunks(false)
 
 	var compass := int(round(rad_to_deg(-heading))) % 360
 	if compass < 0:
 		compass += 360
-	status.text = "HDG %03d   SPD %+.0f   VECTOR MODE   [W/S drive · A/D turn · SPACE fire · F11 fullscreen]" % [compass, speed_now]
+	var warn := "   — HULL HIT —" if hit_warn > 0.0 else ""
+	status.text = "HDG %03d   SPD %+.0f   VECTOR MODE%s" % [compass, speed_now, warn]
 
 
-# ---------------------------------------------------------------- cannon
+func _apply_shake(delta: float) -> void:
+	if shake > 0.0:
+		shake = maxf(shake - delta * 1.6, 0.0)
+		var s := shake * 0.14
+		camera.position = Vector3(rng.randf_range(-s, s), 1.6 + rng.randf_range(-s, s), rng.randf_range(-s, s))
+	else:
+		camera.position = Vector3(0, 1.6, 0)
+
+
+func _show_banner(text: String, seconds: float) -> void:
+	banner.text = text
+	banner.visible = true
+	banner_time = seconds
+
+
+# ---------------------------------------------------------------- waves
+
+func _update_waves(delta: float) -> void:
+	if game_over:
+		return
+	match wave_state:
+		"intro":
+			wave_timer -= delta
+			if wave_timer <= 0.0:
+				wave += 1
+				wave_total = 2 + wave
+				wave_spawned = 0
+				wave_state = "combat"
+				_show_banner("WAVE %d" % wave, 1.8)
+				_update_score_hud()
+		"combat":
+			if wave_spawned < wave_total and enemies.size() < ENEMY_MAX_ALIVE:
+				_spawn_enemy()
+				wave_spawned += 1
+				_update_score_hud()
+			elif wave_spawned >= wave_total and enemies.is_empty():
+				score += 250
+				wave_state = "cleared"
+				wave_timer = 2.6
+				_show_banner("WAVE %d CLEARED  +250" % wave, 2.4)
+				_update_score_hud()
+		"cleared":
+			wave_timer -= delta
+			if wave_timer <= 0.0:
+				wave_state = "intro"
+				wave_timer = 0.8
+
+
+func _restart() -> void:
+	score = 0
+	hull = HULL_MAX
+	tanks_left = 3
+	wave = 0
+	wave_state = "intro"
+	wave_timer = 1.0
+	game_over = false
+	gameover_label.visible = false
+	tank.position = Vector3(0, 0, 8)
+	heading = 0.0
+	protection = 2.0
+	enemies.clear()
+	shells.clear()
+	_rebuild_chunks(true)
+	_update_score_hud()
+
+
+func _update_score_hud() -> void:
+	score_label.text = "SCORE %04d" % score
+	hull_label.text = "HULL %d/%d   TANKS %d" % [maxi(hull, 0), HULL_MAX, maxi(tanks_left, 0)]
+	var hostiles := wave_total - wave_spawned + enemies.size()
+	wave_label.text = "WAVE %d   HOSTILES %d" % [maxi(wave, 1), maxi(hostiles, 0)]
+
+
+# ---------------------------------------------------------------- battlefield
+
+func _chunk_of(pos: Vector3) -> Vector2i:
+	return Vector2i(floori(pos.x / CHUNK), floori(pos.z / CHUNK))
+
+
+func _rebuild_chunks(force: bool) -> void:
+	var here := _chunk_of(tank.position)
+	if not force and here == _chunk_at:
+		return
+	_chunk_at = here
+	obstacles.clear()
+	for cx in range(here.x - CHUNK_RADIUS, here.x + CHUNK_RADIUS + 1):
+		for cz in range(here.y - CHUNK_RADIUS, here.y + CHUNK_RADIUS + 1):
+			_gen_chunk(cx, cz)
+	renderer.rebuild_obstacles(obstacles)
+
+
+func _gen_chunk(cx: int, cz: int) -> void:
+	# Deterministic per chunk: leave and return, the field is the same.
+	var s: int = cx * 374761393 + cz * 668265263
+	s = (s ^ (s >> 13)) * 1274126177
+	var r := RandomNumberGenerator.new()
+	r.seed = s ^ (s >> 16)
+	if r.randf() < 0.22:
+		return
+	var count := r.randi_range(1, 3)
+	for i in count:
+		var p := Vector3(cx * CHUNK + r.randf_range(7.0, CHUNK - 7.0), 0, cz * CHUNK + r.randf_range(7.0, CHUNK - 7.0))
+		# Never drop a rock on the spawn plain or on the player's nose.
+		if p.distance_to(Vector3(0, 0, 8)) < 16.0 or p.distance_to(tank.position) < 12.0:
+			continue
+		if r.randf() < 0.58:
+			var w := r.randf_range(2.0, 3.5)
+			obstacles.append({"kind": "box", "pos": p, "size": Vector3(w, r.randf_range(2.0, 4.0), w)})
+		else:
+			obstacles.append({"kind": "pyramid", "pos": p, "size": Vector3(r.randf_range(3.5, 6.0), r.randf_range(3.0, 4.5), 0)})
+
+
+# ---------------------------------------------------------------- cannon & shells
 
 func _fire() -> void:
-	if game_over or fire_cooldown > 0.0:
+	if game_over or dead_timer > 0.0 or fire_cooldown > 0.0:
 		return
 	fire_cooldown = FIRE_COOLDOWN
 	reticle_flash = 1.0
 	var origin := camera.global_position
 	var dir := -camera.global_transform.basis.z
-	var best := FIRE_RANGE
-	var hit_enemy: Dictionary = {}
+	# Aim convergence: the shell flies from the low gun to the point the
+	# reticle actually covers, so what you point at is what you hit.
+	var aim := origin + dir * _aim_distance(origin, dir)
+	var muzzle := origin + camera.global_transform.basis.x * 0.45 - camera.global_transform.basis.y * 0.5 + dir * 1.2
+	var vel := (aim - muzzle).normalized() * SHELL_SPEED
+	shells.append({"pos": muzzle, "vel": vel, "player": true})
+
+
+func _aim_distance(origin: Vector3, dir: Vector3) -> float:
+	var best := 80.0
 	for ob in obstacles:
 		var t := _ray_aabb(origin, dir, ob)
 		if t > 0.0 and t < best:
@@ -165,116 +308,139 @@ func _fire() -> void:
 		var t := _ray_aabb(origin, dir, box)
 		if t > 0.0 and t < best:
 			best = t
-			hit_enemy = e
-	var end := origin + dir * best
-	# The tracer starts at the gun, low and right of the eye — a shot
-	# drawn from the eye down its own axis projects to an invisible dot
-	# (that was build 1's "Space doesn't fire" bug: it fired, unseen).
-	var muzzle := origin + camera.global_transform.basis.x * 0.45 - camera.global_transform.basis.y * 0.5 + dir * 1.2
-	renderer.add_tracer(muzzle, end, false)
-	renderer.add_burst(end, 0.8)
-	if not hit_enemy.is_empty():
-		_kill_enemy(hit_enemy)
+	return best
+
+
+func _update_shells(delta: float) -> void:
+	for i in range(shells.size() - 1, -1, -1):
+		var sh := shells[i]
+		var vel: Vector3 = sh["vel"]
+		vel.y -= SHELL_GRAVITY * delta
+		sh["vel"] = vel
+		var pos: Vector3 = sh["pos"] + vel * delta
+		sh["pos"] = pos
+		var dead := false
+		if pos.y <= 0.0:
+			renderer.add_burst(Vector3(pos.x, 0.2, pos.z), 0.7)
+			dead = true
+		else:
+			for ob in obstacles:
+				if _point_hits_obstacle(pos, ob):
+					renderer.add_burst(pos, 0.9)
+					dead = true
+					break
+		if not dead and bool(sh["player"]):
+			for e in enemies.duplicate():
+				var ep: Vector3 = e["pos"]
+				if absf(pos.x - ep.x) < 1.5 and absf(pos.z - ep.z) < 1.5 and pos.y < 2.0:
+					_kill_enemy(e)
+					dead = true
+					break
+		if not dead and not bool(sh["player"]) and protection <= 0.0 and dead_timer <= 0.0 and not game_over:
+			var centre := tank.position + Vector3(0, 1.0, 0)
+			if pos.distance_to(centre) < 1.7:
+				_player_hit()
+				dead = true
+		if not dead and pos.distance_to(tank.position) > 220.0:
+			dead = true
+		if dead:
+			shells.remove_at(i)
+
+
+func _point_hits_obstacle(p: Vector3, ob: Dictionary) -> bool:
+	var c: Vector3 = ob["pos"]
+	var s: Vector3 = ob["size"]
+	if ob["kind"] == "box":
+		return absf(p.x - c.x) < s.x * 0.5 and absf(p.z - c.z) < s.z * 0.5 and p.y >= 0.0 and p.y < s.y
+	# Square pyramid: the higher the point, the smaller the cross-section.
+	if p.y < 0.0 or p.y >= s.y:
+		return false
+	var half_at_y := s.x * 0.5 * (1.0 - p.y / s.y)
+	return absf(p.x - c.x) < half_at_y and absf(p.z - c.z) < half_at_y
 
 
 func _kill_enemy(e: Dictionary) -> void:
 	renderer.add_burst(e["pos"] + Vector3(0, 1.0, 0), 2.2)
 	enemies.erase(e)
 	score += 100
-	respawn_timer = 2.0
 	_update_score_hud()
 
 
 func _enemy_fire(e: Dictionary) -> void:
-	var origin: Vector3 = e["pos"] + Vector3(0, 1.1, 0)
+	var origin: Vector3 = e["pos"] + Vector3(0, 1.2, 0) + Vector3(-sin(float(e["heading"])), 0, -cos(float(e["heading"]))) * 2.0
 	var target := tank.position + Vector3(0, 1.0, 0)
 	var dir := (target - origin).normalized()
-	# A fair spread, not an oracle: rotate the aim a touch at random.
 	var spread := rng.randf_range(-0.045, 0.045)
 	dir = dir.rotated(Vector3.UP, spread)
-	var blocked := FIRE_RANGE
-	for ob in obstacles:
-		var t := _ray_aabb(origin, dir, ob)
-		if t > 0.0 and t < blocked:
-			blocked = t
-	var dist := origin.distance_to(target)
-	var end := origin + dir * minf(blocked, FIRE_RANGE)
-	# Does the shot pass through the player?
-	var t_ca := (target - origin).dot(dir)
-	var hit := false
-	if t_ca > 0.0 and t_ca < blocked:
-		var closest := origin + dir * t_ca
-		if closest.distance_to(target) < 1.6:
-			hit = true
-			end = closest
-	renderer.add_tracer(origin, end, true)
-	renderer.add_burst(end, 0.6)
-	if hit:
-		_player_hit()
+	shells.append({"pos": origin, "vel": dir * ENEMY_SHELL_SPEED, "player": false})
 
 
 func _player_hit() -> void:
 	hull -= 1
+	hit_warn = 1.2
+	flash_alpha = 1.0
+	shake = 0.5
 	_update_score_hud()
 	if hull > 0:
 		return
+	# Destroyed — this part must be unmissable.
 	tanks_left -= 1
-	renderer.add_burst(tank.position + Vector3(0, 1.0, 0), 3.0)
+	renderer.add_burst(tank.position + Vector3(0, 1.0, 0), 3.2)
+	renderer.add_burst(tank.position + Vector3(0.8, 0.6, 0.4), 2.0)
+	flash_alpha = 1.0
+	shake = 1.0
 	if tanks_left <= 0:
 		game_over = true
+		gameover_label.text = "GAME OVER\nSCORE %04d\n\nPress ENTER to restart" % score
 		gameover_label.visible = true
 		_update_score_hud()
 		return
-	# Fresh tank at the spawn plain; enemies keep the field but their
-	# guns go quiet briefly so the respawn isn't an instant second death.
+	dead_timer = 1.5
+	_show_banner("TANK DESTROYED", 1.5)
+	_update_score_hud()
+
+
+func _respawn() -> void:
 	hull = HULL_MAX
-	tank.position = Vector3(0, 0, 8)
-	heading = 0.0
+	protection = 3.0
+	# Nobody camps the wreck: hostiles near the respawn get pushed back
+	# out to the spawn ring, and their guns stay quiet during protection.
 	for e in enemies:
+		var ep: Vector3 = e["pos"]
+		if ep.distance_to(tank.position) < 40.0:
+			e["pos"] = _spawn_point()
 		e["cooldown"] = maxf(float(e["cooldown"]), 2.0)
+	_show_banner("TANK %d READY" % (4 - tanks_left), 1.6)
 	_update_score_hud()
-
-
-func _restart() -> void:
-	score = 0
-	hull = HULL_MAX
-	tanks_left = 3
-	game_over = false
-	gameover_label.visible = false
-	tank.position = Vector3(0, 0, 8)
-	heading = 0.0
-	enemies.clear()
-	for i in ENEMY_COUNT:
-		_spawn_enemy()
-	_update_score_hud()
-
-
-func _update_score_hud() -> void:
-	score_label.text = "SCORE %04d" % score
-	hull_label.text = "HULL %d/%d   TANKS %d" % [maxi(hull, 0), HULL_MAX, maxi(tanks_left, 0)]
 
 
 # ---------------------------------------------------------------- enemies
 
-func _spawn_enemy() -> void:
-	for attempt in 12:
+func _spawn_point() -> Vector3:
+	for attempt in 16:
 		var a := rng.randf_range(0.0, TAU)
-		var d := rng.randf_range(55.0, 85.0)
+		var d := rng.randf_range(SPAWN_MIN, SPAWN_MAX)
 		var p := tank.position + Vector3(sin(a) * d, 0, cos(a) * d)
-		if Vector2(p.x, p.z).length() > WORLD_RADIUS - 5.0:
-			continue
 		var clear := true
 		for ob in obstacles:
 			var s: Vector3 = ob["size"]
 			if absf(p.x - ob["pos"].x) < s.x * 0.5 + 2.5 and absf(p.z - ob["pos"].z) < s.x * 0.5 + 2.5:
 				clear = false
 		if clear:
-			enemies.append({"pos": p, "heading": rng.randf_range(0.0, TAU), "cooldown": rng.randf_range(1.0, 2.5)})
-			return
-	enemies.append({"pos": Vector3(40, 0, -40), "heading": 0.0, "cooldown": 2.0})
+			return p
+	# Fallback: still far — on the ring, due "north" of the player.
+	return tank.position + Vector3(0, 0, -SPAWN_MAX)
+
+
+func _spawn_enemy() -> void:
+	var p := _spawn_point()
+	enemies.append({"pos": p, "heading": rng.randf_range(0.0, TAU), "cooldown": rng.randf_range(1.2, 2.5)})
+	renderer.add_burst(p + Vector3(0, 1.0, 0), 1.2)
 
 
 func _update_enemies(delta: float) -> void:
+	if dead_timer > 0.0 or game_over:
+		return
 	for e in enemies:
 		var pos: Vector3 = e["pos"]
 		var to_player := tank.position - pos
@@ -282,7 +448,6 @@ func _update_enemies(delta: float) -> void:
 		var dist := to_player.length()
 		var dir := to_player / maxf(dist, 0.001)
 		var desired := atan2(-dir.x, -dir.z)
-		# Crude obstacle sense: something dead ahead, steer off it.
 		var fwd := Vector3(-sin(float(e["heading"])), 0, -cos(float(e["heading"])))
 		var probe := pos + fwd * 5.5
 		for ob in obstacles:
@@ -295,14 +460,9 @@ func _update_enemies(delta: float) -> void:
 		e["heading"] = float(e["heading"]) + clampf(diff, -ENEMY_TURN * delta, ENEMY_TURN * delta)
 		if dist > 4.0:
 			fwd = Vector3(-sin(float(e["heading"])), 0, -cos(float(e["heading"])))
-			var next := pos + fwd * ENEMY_SPEED * delta
-			if Vector2(next.x, next.z).length() > WORLD_RADIUS:
-				var cl := Vector2(next.x, next.z).limit_length(WORLD_RADIUS)
-				next.x = cl.x
-				next.z = cl.y
-			e["pos"] = _resolve_collisions(next, ENEMY_RADIUS)
+			e["pos"] = _resolve_collisions(pos + fwd * ENEMY_SPEED * delta, ENEMY_RADIUS)
 		e["cooldown"] = float(e["cooldown"]) - delta
-		if float(e["cooldown"]) <= 0.0 and dist < ENEMY_FIRE_RANGE:
+		if float(e["cooldown"]) <= 0.0 and dist < ENEMY_FIRE_RANGE and protection <= 0.0:
 			_enemy_fire(e)
 			e["cooldown"] = rng.randf_range(1.7, 3.0)
 
@@ -315,6 +475,12 @@ func _resolve_collisions(pos: Vector3, radius: float) -> Vector3:
 		var s: Vector3 = ob["size"]
 		var hx := s.x * 0.5
 		var hz := (s.z if ob["kind"] == "box" else s.x) * 0.5
+		if ob["kind"] == "pyramid":
+			# A tank meets the slope, not the base's full square: at hull
+			# height the pyramid has already narrowed.
+			var shrink := clampf(1.0 - 1.1 / s.y, 0.25, 1.0)
+			hx *= shrink
+			hz *= shrink
 		var closest := Vector3(clampf(pos.x, c.x - hx, c.x + hx), 0, clampf(pos.z, c.z - hz, c.z + hz))
 		var diff := Vector2(pos.x - closest.x, pos.z - closest.z)
 		var dist := diff.length()
@@ -328,7 +494,8 @@ func _resolve_collisions(pos: Vector3, radius: float) -> Vector3:
 	return pos
 
 
-# Slab-method ray vs an obstacle's 3D bounding box. Returns distance or -1.
+# Slab-method ray vs a bounding box (used for aim convergence only —
+# shots themselves are travelling shells now, not rays).
 func _ray_aabb(origin: Vector3, dir: Vector3, ob: Dictionary) -> float:
 	var s: Vector3 = ob["size"]
 	var depth := s.z if ob["kind"] == "box" else s.x
