@@ -77,10 +77,49 @@ incident in this repo (named, so the next reader trusts the rule).
     status is unfinished; a silent tuning change inside an
     unrelated landing is a violation.
 
+13. **No else.** (Adam's nitpick, pinned 2026-11-18.) An `else`
+    block is never written — and neither is `elif`. Invert the
+    condition and return early; set the plain case first and let
+    the special case override it; give each branch its own guard.
+    The happy path stays at the left margin, and every condition
+    states the case it handles instead of "the other one." The
+    whole codebase was refactored to comply the day this tenet
+    landed, regression-tested 13/13 — the law is not aspirational.
+    (Open question, Adam's to rule: the value-ternary `a if cond
+    else b` is an expression, not a branch, and currently survives
+    in a handful of one-liners. If he rules it out too, they go.)
+
+## The library shelf (lib/)
+
+Scaffolding lives in `lib/`, one class per file, each with a
+class_name and a driven test in the landing that introduces it.
+What is on the shelf:
+
+- **Option** — a nullable with manners: `some` / `none` /
+  `from_nullable` at a Variant border, `value_or` (the
+  null-coalescing GDScript doesn't have), `map`, and an `unwrap`
+  that asserts loudly. Absence is handled in the open or not at all.
+- **Result** — value-or-error for fallible work (files, parsing,
+  the network when it comes): `ok` / `err`, `value_or`, `error`,
+  `unwrap`. No nulls, no sentinels, no silent failures.
+
+What no library can fix, recorded so nobody tries: there is no
+compile-time exhaustiveness (a `match` can forget a case and the
+compiler won't say), no user-defined generic classes (the typed
+`Array[T]` and `Dictionary[K, V]` are the generics we have), and no
+nullable annotation for value types (which don't need one — they
+can't be null). The shelf answers with discipline, per tenets 1-3.
+
+Practical note: a new class_name registers with the engine's class
+cache on an import pass — run one (`--headless --import`) before
+testing code that references a brand-new library class, or the
+compiler will swear the class doesn't exist. (Learned the day the
+shelf was built.)
+
 ## Scope and verification
 
-These twelve tenets govern all GDScript and scene work in this
+These thirteen tenets govern all GDScript and scene work in this
 repo. A landing is done when its headless boot is clean, its driven
 tests pass, and no tenet was bent to get there. When a new incident
-teaches a new lesson, the manifesto gains a tenet — with the
-incident named, the way these were.
+teaches a new lesson — or Adam names a new nitpick — the manifesto
+gains a tenet, with its origin recorded the way these were.
