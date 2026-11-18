@@ -6,6 +6,30 @@ tenets became Mass Rattle's; these are Hull Down's, written for
 GDScript and Godot, and every tenet below was earned by a real
 incident in this repo (named, so the next reader trusts the rule).
 
+## Universal Laws — every language, every platform
+
+Pinned by Adam, 2026-11-18. These five laws stand above the
+tenets below and above every manifesto in the family: they hold
+in GDScript, TypeScript, or anything else, on any platform. The
+tenets under them are each repo's own scar tissue; these are the
+constitution the scar tissue hangs on.
+
+1. **No else.** Guard clauses, early returns, flat flow. Every
+   condition states the case it handles, never "the other one."
+2. **KISS.** The simplest thing that works. Cleverness is a cost,
+   not a flex; a reader should never need to be smart to follow
+   the code, only attentive.
+3. **Separation of concerns.** Each module owns one concern.
+   Coordinators wire — refs, listeners, sync calls, composition —
+   and do not compute; logic lives in the module that owns it.
+4. **DRY.** One canonical home for every rule, number, and shape.
+   A second copy is not a convenience; it is a bug waiting for
+   a date.
+5. **Comments carry the why.** Intent, provenance, status —
+   never a restatement of what the code plainly says.
+
+In this repo: law 1 is Tenet 13 below (GDScript dress), law 5 is Tenet 11.
+
 ## The tenets
 
 1. **Annotate at the Variant border.** A value that comes out of a
