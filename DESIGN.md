@@ -15,6 +15,23 @@
   the start; a visual mode is a skin over the same game, never a fork.
 - **Workflow:** repo NomadtheGrey/hull-down; Marlowe builds on WIP,
   Adam pulls main only; merges happen on Adam's explicit word only.
+- **Display** (2026-11-18): the game stretches to fit — project stretch
+  mode canvas_items, aspect expand — so a published build fills any
+  screen instead of staying locked to the editor viewport size. F11 /
+  the FULLSCREEN button toggles true fullscreen.
+- **Mode option lives in the game** (2026-11-18): VECTOR / 3D MODELS
+  buttons in the HUD; the 3D button stays disabled until that mode is
+  populated.
+
+## Built
+
+- Scaffold (Merge #1, on main): bootable greybox plain.
+- Vector build 1 (WIP): drivable first-person tank (main.gd owns all
+  game state; collision is circle-vs-obstacle math, no physics
+  dependency), cannon with tracer + ray-hit against obstacle boxes,
+  vector_renderer.gd draws grid / obstacles / horizon mountains as
+  unshaded green line meshes. Headless-verified: clean 180-frame boot,
+  collision push-out and ray-hit tests pass.
 
 ## Draft / open
 
