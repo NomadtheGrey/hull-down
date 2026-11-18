@@ -1,16 +1,20 @@
 extends Node3D
 ## Hull Down — VECTOR mode renderer.
-## Draws the world state owned by main.gd as bright green line work:
-## a dim ground grid, box and pyramid obstacles, and a jagged mountain
-## ring on the horizon. Everything is ImmediateMesh line pairs with an
-## unshaded material — the closest a raster screen gets to the 1980
-## vector display. The future 3D-model renderer will sit beside this
-## one and read the same state; neither touches the game logic.
+## Draws the world state owned by main.gd as phosphor line work:
+## a dim ground grid, box and pyramid obstacles, a jagged mountain
+## ring on the horizon (static mesh), plus per-frame dynamic lines —
+## enemy tanks, cannon tracers and impact bursts. Everything is
+## ImmediateMesh line pairs with unshaded materials. The future
+## 3D-model renderer will sit beside this one and read the same state.
 
 var _bright: StandardMaterial3D
 var _dim: StandardMaterial3D
-var _tracer_mesh: ImmediateMesh
-var _tracer_instance: MeshInstance3D
+var _amber: StandardMaterial3D
+var _enemies_ref: Array = []
+var _tracers: Array[Dictionary] = [] # {from, to, ttl, max, amber}
+var _bursts: Array[Dictionary] = [] # {pos, ttl, max, size}
+var _dyn_green: ImmediateMesh
+var _dyn_amber: ImmediateMesh
 
 
 func _ready() -> void:
@@ -20,15 +24,26 @@ func _ready() -> void:
 	_dim = StandardMaterial3D.new()
 	_dim.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_dim.albedo_color = Color(0.02, 0.28, 0.08)
-	_tracer_mesh = ImmediateMesh.new()
-	_tracer_instance = MeshInstance3D.new()
-	_tracer_instance.mesh = _tracer_mesh
-	_tracer_instance.material_override = _bright
-	add_child(_tracer_instance)
+	_amber = StandardMaterial3D.new()
+	_amber.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_amber.albedo_color = Color(1.0, 0.45, 0.15)
+	_dyn_green = ImmediateMesh.new()
+	var gi := MeshInstance3D.new()
+	gi.mesh = _dyn_green
+	gi.material_override = _bright
+	add_child(gi)
+	_dyn_amber = ImmediateMesh.new()
+	var ai := MeshInstance3D.new()
+	ai.mesh = _dyn_amber
+	ai.material_override = _amber
+	add_child(ai)
+
+
+func set_enemies(enemies: Array) -> void:
+	_enemies_ref = enemies
 
 
 func build_world(obstacles: Array) -> void:
-	# Obstacles + mountains in the bright mesh.
 	var mesh := ImmediateMesh.new()
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES)
 	for ob in obstacles:
@@ -43,7 +58,6 @@ func build_world(obstacles: Array) -> void:
 	inst.material_override = _bright
 	add_child(inst)
 
-	# Ground grid in the dim mesh — sells the sense of motion.
 	var grid := ImmediateMesh.new()
 	grid.surface_begin(Mesh.PRIMITIVE_LINES)
 	var ext := 120
@@ -60,6 +74,100 @@ func build_world(obstacles: Array) -> void:
 	ginst.mesh = grid
 	ginst.material_override = _dim
 	add_child(ginst)
+
+
+func add_tracer(from: Vector3, to: Vector3, amber: bool) -> void:
+	_tracers.append({"from": from, "to": to, "ttl": 0.16, "max": 0.16, "amber": amber})
+
+
+func add_burst(pos: Vector3, size: float) -> void:
+	_bursts.append({"pos": pos, "ttl": 0.3, "max": 0.3, "size": size})
+
+
+## Called by main every frame; ages effects and rebuilds dynamic lines.
+func update_enemies() -> void:
+	pass # kept as main's per-frame hook; the work happens in _process
+
+
+func _process(delta: float) -> void:
+	_dyn_green.clear_surfaces()
+	_dyn_amber.clear_surfaces()
+
+	# Enemy tanks.
+	_dyn_green.surface_begin(Mesh.PRIMITIVE_LINES)
+	for e in _enemies_ref:
+		_tank(_dyn_green, e["pos"], float(e["heading"]))
+	# Player tracers and all bursts burn green.
+	for t in _tracers:
+		if not bool(t["amber"]):
+			_dyn_green.surface_add_vertex(t["from"])
+			_dyn_green.surface_add_vertex(t["to"])
+	for b in _bursts:
+		_burst_lines(_dyn_green, b)
+	_dyn_green.surface_end()
+
+	# Enemy tracers burn amber so danger reads at a glance.
+	var any_amber := false
+	for t in _tracers:
+		if bool(t["amber"]):
+			if not any_amber:
+				_dyn_amber.surface_begin(Mesh.PRIMITIVE_LINES)
+				any_amber = true
+			_dyn_amber.surface_add_vertex(t["from"])
+			_dyn_amber.surface_add_vertex(t["to"])
+	if any_amber:
+		_dyn_amber.surface_end()
+
+	# Age effects.
+	for i in range(_tracers.size() - 1, -1, -1):
+		_tracers[i]["ttl"] = float(_tracers[i]["ttl"]) - delta
+		if float(_tracers[i]["ttl"]) <= 0.0:
+			_tracers.remove_at(i)
+	for i in range(_bursts.size() - 1, -1, -1):
+		_bursts[i]["ttl"] = float(_bursts[i]["ttl"]) - delta
+		if float(_bursts[i]["ttl"]) <= 0.0:
+			_bursts.remove_at(i)
+
+
+func _tank(mesh: ImmediateMesh, pos: Vector3, h: float) -> void:
+	# A low hull, a turret, and a barrel — read as a tank in 14 lines.
+	var local := [
+		# hull: bottom rectangle, top rectangle, uprights
+		Vector3(-1.1, 0.25, -1.4), Vector3(1.1, 0.25, -1.4), Vector3(1.1, 0.25, 1.4), Vector3(-1.1, 0.25, 1.4),
+		Vector3(-1.1, 0.95, -1.4), Vector3(1.1, 0.95, -1.4), Vector3(1.1, 0.95, 1.4), Vector3(-1.1, 0.95, 1.4),
+		# turret
+		Vector3(-0.55, 0.95, -0.3), Vector3(0.55, 0.95, -0.3), Vector3(0.55, 0.95, 0.7), Vector3(-0.55, 0.95, 0.7),
+		Vector3(-0.55, 1.45, -0.3), Vector3(0.55, 1.45, -0.3), Vector3(0.55, 1.45, 0.7), Vector3(-0.55, 1.45, 0.7),
+	]
+	var edges := [
+		[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4],
+		[0, 4], [1, 5], [2, 6], [3, 7],
+		[8, 9], [9, 10], [10, 11], [11, 8], [12, 13], [13, 14], [14, 15], [15, 12],
+		[8, 12], [9, 13], [10, 14], [11, 15],
+	]
+	for e in edges:
+		mesh.surface_add_vertex(_to_world(local[e[0]], pos, h))
+		mesh.surface_add_vertex(_to_world(local[e[1]], pos, h))
+	# Barrel: from the turret's front face, forward.
+	mesh.surface_add_vertex(_to_world(Vector3(0, 1.2, -0.3), pos, h))
+	mesh.surface_add_vertex(_to_world(Vector3(0, 1.2, -2.2), pos, h))
+
+
+func _to_world(v: Vector3, pos: Vector3, h: float) -> Vector3:
+	return pos + Vector3(v.x * cos(h) + v.z * sin(h), v.y, -v.x * sin(h) + v.z * cos(h))
+
+
+func _burst_lines(mesh: ImmediateMesh, b: Dictionary) -> void:
+	var frac := 1.0 - float(b["ttl"]) / float(b["max"])
+	var r := float(b["size"]) * (0.3 + frac * 0.9)
+	var c: Vector3 = b["pos"]
+	var dirs := [
+		Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 0, -1),
+		Vector3(0.7, 0.7, 0), Vector3(-0.7, 0.7, 0), Vector3(0, 0.8, 0.7), Vector3(0, 0.8, -0.7),
+	]
+	for d in dirs:
+		mesh.surface_add_vertex(c)
+		mesh.surface_add_vertex(c + d * r)
 
 
 func _box(mesh: ImmediateMesh, c: Vector3, s: Vector3) -> void:
@@ -93,7 +201,6 @@ func _pyramid(mesh: ImmediateMesh, c: Vector3, s: Vector3) -> void:
 
 
 func _mountains(mesh: ImmediateMesh) -> void:
-	# A closed jagged ring at the horizon, deterministic heights.
 	var radius := 190.0
 	var count := 72
 	var prev := Vector3.ZERO
@@ -106,21 +213,8 @@ func _mountains(mesh: ImmediateMesh) -> void:
 			mesh.surface_add_vertex(prev)
 			mesh.surface_add_vertex(p)
 		prev = p
-	# A horizon ring at ground level, so the peaks sit on a horizon.
 	for k in count:
 		var a1 := TAU * float(k) / float(count)
 		var a2 := TAU * float(k + 1) / float(count)
 		mesh.surface_add_vertex(Vector3(sin(a1) * radius, 0.05, cos(a1) * radius))
 		mesh.surface_add_vertex(Vector3(sin(a2) * radius, 0.05, cos(a2) * radius))
-
-
-func show_tracer(from: Vector3, to: Vector3) -> void:
-	_tracer_mesh.clear_surfaces()
-	_tracer_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-	_tracer_mesh.surface_add_vertex(from)
-	_tracer_mesh.surface_add_vertex(to)
-	_tracer_mesh.surface_end()
-
-
-func clear_tracer() -> void:
-	_tracer_mesh.clear_surfaces()
