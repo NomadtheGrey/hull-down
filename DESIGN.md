@@ -29,6 +29,9 @@
 - **Never assume a PC** (2026-11-18): touch controls on phones and
   tablets ship simultaneously with keyboard/mouse buildouts. On PC,
   the mouse rotates the camera (pointer capture steering).
+- **Code law** (2026-11-18): CODE_MANIFESTO.md in this repo — the
+  GDScript edition of Adam's per-project manifesto family, twelve
+  tenets, each earned by a named incident here.
 
 ## Built
 

@@ -139,29 +139,33 @@ func _release_mouse() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# No else, per the manifesto: each event kind is its own guard,
+	# handled and returned from.
 	if event is InputEventMouseMotion and mouse_captured:
 		heading -= event.relative.x * MOUSE_SENS
-	elif event is InputEventKey and event.pressed and not event.echo:
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_F11:
 			toggle_fullscreen()
-		elif event.keycode == KEY_ESCAPE and mouse_captured:
+		if event.keycode == KEY_ESCAPE and mouse_captured:
 			_release_mouse()
-		elif event.keycode == KEY_ENTER and game_over:
+		if event.keycode == KEY_ENTER and game_over:
 			_restart()
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		# PC mouse play: the first click on the view captures the mouse
 		# (move = steer); clicks while captured fire the cannon.
-		if mouse_captured:
-			_fire()
-		else:
+		if not mouse_captured:
 			_capture_mouse()
+			return
+		_fire()
 
 
 func toggle_fullscreen() -> void:
+	var mode := DisplayServer.WINDOW_MODE_FULLSCREEN
 	if DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN:
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-	else:
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		mode = DisplayServer.WINDOW_MODE_WINDOWED
+	DisplayServer.window_set_mode(mode)
 
 
 func _process(delta: float) -> void:
@@ -239,12 +243,11 @@ func _process(delta: float) -> void:
 
 
 func _apply_shake(delta: float) -> void:
+	camera.position = Vector3(0, 1.6, 0)
 	if shake > 0.0:
 		shake = maxf(shake - delta * 1.6, 0.0)
 		var s := shake * 0.14
 		camera.position = Vector3(rng.randf_range(-s, s), 1.6 + rng.randf_range(-s, s), rng.randf_range(-s, s))
-	else:
-		camera.position = Vector3(0, 1.6, 0)
 
 
 func _show_banner(text: String, seconds: float) -> void:
@@ -273,7 +276,7 @@ func _update_waves(delta: float) -> void:
 				_spawn_enemy()
 				wave_spawned += 1
 				_update_score_hud()
-			elif wave_spawned >= wave_total and enemies.is_empty():
+			if wave_spawned >= wave_total and enemies.is_empty():
 				score += 250
 				_save_high()
 				wave_state = "cleared"
@@ -347,9 +350,9 @@ func _update_warn() -> void:
 	var where := ""
 	if diff > 0.55 and diff < 2.6:
 		where = "ENEMY TO LEFT"
-	elif diff < -0.55 and diff > -2.6:
+	if diff < -0.55 and diff > -2.6:
 		where = "ENEMY TO RIGHT"
-	elif absf(diff) >= 2.6:
+	if absf(diff) >= 2.6:
 		where = "ENEMY TO REAR"
 	var lines: Array[String] = []
 	if best <= ENEMY_FIRE_RANGE:
@@ -395,11 +398,11 @@ func _gen_chunk(cx: int, cz: int) -> void:
 		# Never drop a rock on the spawn plain or on the player's nose.
 		if p.distance_to(Vector3(0, 0, 8)) < 16.0 or p.distance_to(tank.position) < 12.0:
 			continue
+		var ob := {"kind": "pyramid", "pos": p, "size": Vector3(r.randf_range(3.5, 6.0), r.randf_range(3.0, 4.5), 0)}
 		if r.randf() < 0.58:
 			var w := r.randf_range(2.0, 3.5)
-			obstacles.append({"kind": "box", "pos": p, "size": Vector3(w, r.randf_range(2.0, 4.0), w)})
-		else:
-			obstacles.append({"kind": "pyramid", "pos": p, "size": Vector3(r.randf_range(3.5, 6.0), r.randf_range(3.0, 4.5), 0)})
+			ob = {"kind": "box", "pos": p, "size": Vector3(w, r.randf_range(2.0, 4.0), w)}
+		obstacles.append(ob)
 
 
 # ---------------------------------------------------------------- cannon & shells
@@ -445,7 +448,7 @@ func _update_shells(delta: float) -> void:
 		if pos.y <= 0.0:
 			renderer.add_burst(Vector3(pos.x, 0.2, pos.z), 0.7)
 			dead = true
-		else:
+		if not dead:
 			for ob in obstacles:
 				if _point_hits_obstacle(pos, ob):
 					renderer.add_burst(pos, 0.9)
@@ -607,13 +610,12 @@ func _resolve_collisions(pos: Vector3, radius: float) -> Vector3:
 		var closest := Vector3(clampf(pos.x, c.x - hx, c.x + hx), 0, clampf(pos.z, c.z - hz, c.z + hz))
 		var diff := Vector2(pos.x - closest.x, pos.z - closest.z)
 		var dist := diff.length()
-		if dist < radius:
-			if dist > 0.001:
-				var pushed := Vector2(closest.x, closest.z) + diff.normalized() * radius
-				pos.x = pushed.x
-				pos.z = pushed.y
-			else:
-				pos.x = c.x + hx + radius
+		if dist < radius and dist <= 0.001:
+			pos.x = c.x + hx + radius
+		if dist < radius and dist > 0.001:
+			var pushed := Vector2(closest.x, closest.z) + diff.normalized() * radius
+			pos.x = pushed.x
+			pos.z = pushed.y
 	return pos
 
 
@@ -631,10 +633,10 @@ func _ray_aabb(origin: Vector3, dir: Vector3, ob: Dictionary) -> float:
 	var lo := [bmin.x, bmin.y, bmin.z]
 	var hi := [bmax.x, bmax.y, bmax.z]
 	for i in 3:
-		if absf(d[i]) < 0.0001:
-			if o[i] < lo[i] or o[i] > hi[i]:
-				return -1.0
-		else:
+		var parallel := absf(d[i]) < 0.0001
+		if parallel and (o[i] < lo[i] or o[i] > hi[i]):
+			return -1.0
+		if not parallel:
 			var t1: float = (lo[i] - o[i]) / d[i]
 			var t2: float = (hi[i] - o[i]) / d[i]
 			if t1 > t2:

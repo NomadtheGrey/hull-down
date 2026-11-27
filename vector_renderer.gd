@@ -75,7 +75,7 @@ func rebuild_obstacles(obstacles: Array) -> void:
 		for ob in obstacles:
 			if ob["kind"] == "box":
 				_box(mesh, ob["pos"], ob["size"])
-			else:
+			if ob["kind"] == "pyramid":
 				_pyramid(mesh, ob["pos"], ob["size"])
 		mesh.surface_end()
 	_obst_inst.mesh = mesh
